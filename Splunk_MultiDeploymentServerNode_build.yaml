@@ -1,0 +1,79 @@
+---
+- hosts: << host >>
+  vars:
+   splunkrpm: << full path to rpm >>
+   username: << admin >>
+   password: << password >>
+   repo: << http://gitrepo/.git >>
+   splunkdir: << deployment-apps directory >>
+   idx1: << ip:port>>
+   idx2: << ip:port>>
+   lm: << ip:port>>
+  remote_user: ec2-user
+
+  tasks:
+  - name: copy RPM to /tmp directory of DS node
+    copy: src={{ splunkrpm }} dest=/tmp/ owner=ec2-user mode=0644
+  - name: Install RPM see splunkrpm variable for version
+    shell: rpm -i /tmp/{{ splunkrpm }}
+    become: yes
+    become_user: root
+  - name: Start Splunk service
+    shell: /opt/splunk/bin/./splunk start --accept-license --answer-yes --no-prompt
+    become: yes
+    become_user: root
+  - name: Enable boot start for Splunk service
+    shell: /opt/splunk/bin/./splunk enable boot-start
+    become: yes
+    become_user: root
+  - name: Set admin password via the user-seed.conf
+    shell: touch /opt/splunk/etc/system/local/user-seed.conf; echo -e '[user_info] \n USERNAME = {{ username }}  \n PASSWORD  = {{ password }} ' >> /opt/splunk/etc/system/local/user-seed.conf
+    become: yes
+    become_user: root
+  - name: Restart splunk
+    shell: /opt/splunk/bin/./splunk restart
+    become: yes
+    become_user: root
+  - name: Enable outputs.conf for _internal data
+    shell: echo -e "[tcpout:picard_cluster]\nserver={{ idx1 }},{{ idx2 }}\n" > /opt/splunk/etc/system/local/outputs.conf
+    become: yes
+    become_user: root
+  - name: Add new deployment nodes to License Master
+    shell: /opt/splunk/bin/./splunk edit licenser-localslave -master_uri 'https://{{ lm }}' -auth {{ username }}:{{ password }} 
+    become: yes
+    become_user: root
+  - name: fix server.conf
+    shell: echo -e "[diskUsage] \n minFreeSpace = 200">>/opt/splunk/etc/system/local/server.conf
+    become: yes
+    become_user: root
+  - name: Enable Deployment Server
+    shell: /opt/splunk/bin/./splunk enable deploy-server -auth {{ username }}:{{ password }} 
+    become: yes
+    become_user: root
+  - name: Restart Splunk service
+    service: name=splunk state=restarted
+    become: yes
+    become_user: root
+  - name: Install GIT from default YUM repos
+    yum:
+      name: git
+      state: present    
+    become: yes
+    become_user: root
+  - name: Remove deployment-apps directory so it can be staged with GIT repo
+    shell: rm -rf {{ splunkdir }}
+    become: yes
+    become_user: root
+  - git:
+        repo: "{{ repo }}"
+        dest: "{{ splunkdir }}" 
+    become: yes
+    become_user: root
+  - name: Symlink the serverclass.conf to local for precedence
+    shell: ln -s {{ splunkdir }}/serverclass.conf /opt/splunk/etc/system/local/.
+    become: yes
+    become_user: root
+  - name: Restart Splunk service
+    service: name=splunk state=restarted
+    become: yes
+    become_user: root
