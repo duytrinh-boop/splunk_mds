@@ -1,0 +1,23 @@
+---
+- hosts: << host >>
+  vars:
+   splunkdir: << deployment-apps directory >>
+   idx1: << ip:port>>
+   idx2: << ip:port>>
+   lm: << ip:port>>
+   username: << admin >>
+   password: << password >>
+   class: <<class>>
+  remote_user: ec2-user
+
+
+  tasks:
+  - name: Git Update
+    shell: cd {{ splunkdir }}; git pull origin master
+    become: yes
+    become_user: root
+
+  - name: Splunk Reload
+    shell: /opt/splunk/bin/./splunk reload deploy-server -class {{ class }} -auth {{ username }}:{{ password }}
+    become: yes
+    become_user: root
