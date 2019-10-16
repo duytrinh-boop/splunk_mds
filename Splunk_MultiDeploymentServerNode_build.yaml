@@ -70,7 +70,7 @@
     become: yes
     become_user: root
   - name: Symlink the serverclass.conf to local for precedence
-    shell: ln -s {{ splunkdir }}/serverclass.conf /opt/splunk/etc/system/local/.
+    shell: ln -s {{ splunkdir }}/serverclass/serverclass.conf /opt/splunk/etc/system/local/.
     become: yes
     become_user: root
   - name: Restart Splunk service
