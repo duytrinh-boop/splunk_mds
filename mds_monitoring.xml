@@ -1,0 +1,90 @@
+<dashboard>
+  <label>Multi Deployment Server Monitoring</label>
+  <row>
+    <panel>
+      <table>
+        <search>
+          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/configs/conf-serverclass | search title="global" | fields splunk_server title crossServerChecksum | stats count by crossServerChecksum  splunk_server | fields - count | rename splunk_server AS deployment_server | fields deployment_server crossServerChecksum | eval crossServerChecksum=if(crossServerChecksum=1, "Enabled", "Not Enabled")</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+        <format type="color" field="crossServerChecksum">
+          <colorPalette type="map">{"Not Enabled":#DC4E41,"Enabled":#53A051}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Severclass Checksum</title>
+      <table>
+        <search>
+          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications  | search  (title="serverclass") | stats values(splunk_server) AS deployment_servers dc(checksum) AS checksum_count values(checksum) AS checksum  by title | eval status=if(checksum_count=1,"Matching", "Out of Sync!") | fields - checksum_count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+        <format type="color" field="status">
+          <colorPalette type="map">{"Out of Sync!":#DC4E41,"Matching":#53A051}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Deployment Server Application Checksums</title>
+      <table>
+        <search>
+          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications  | search NOT (title=".DS_Store" OR title=".git"  OR title="README" OR title=".gitignore" OR title="serverclass") | stats values(splunk_server) AS deployment_servers dc(checksum) AS checksum_count values(checksum) AS checksum  by title | eval status=if(checksum_count=1,"Matching", "Out of Sync!") | fields - checksum_count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+        <format type="color" field="checksum_count">
+          <colorPalette type="map">{"1":#53A051}</colorPalette>
+        </format>
+        <format type="color" field="checksum_count">
+          <colorPalette type="map">{"1":#53A051}</colorPalette>
+        </format>
+        <format type="color" field="status">
+          <colorPalette type="map">{"Out of Sync!":#DC4E41,"Matching":#53A051}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Deployment Apps Last Updated by Deployment Server</title>
+      <table>
+        <search>
+          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications | search NOT (title=".*" OR title="README") | chart values(loadtime) OVER title by splunk_server</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Deployment Client Distribution</title>
+      <chart>
+        <search>
+          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/clients | eval hostname_guid=hostname."_".guid |  stats dc(hostname_guid) as deployment_clients by splunk_server | rename splunk_server AS deployment_server</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+</dashboard>
