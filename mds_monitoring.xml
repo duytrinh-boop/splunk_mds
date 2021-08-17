@@ -1,10 +1,93 @@
-<dashboard>
-  <label>Multi Deployment Server Monitoring</label>
+<form>
+  <label>ske_mc_multipledeploymentserver_dashboard</label>
+  <search id="clients">
+    <query>
+      | rest splunk_server_group="dmc_group_deployment_server" /services/deployment/server/clients | fields *
+    </query>
+    <earliest></earliest>
+    <latest></latest>
+    <sampleRatio>1</sampleRatio>
+  </search>
+  <search id="serverclasses">
+    <query>
+      | rest splunk_server_group="dmc_group_deployment_server" /services/deployment/server/serverclasses | fields *
+    </query>
+    <earliest></earliest>
+    <latest></latest>
+    <sampleRatio>1</sampleRatio>
+  </search>
+  <search id="preprocessed_serverclasses">
+    <query>
+      | rest splunk_server_group="dmc_group_deployment_server" /services/deployment/server/clients | fields * | fields hostname applications.*.serverclasses guid ip dns averagePhoneHomeInterval lastPhoneHomeTime utsname 
+| rename applications.*.serverclasses AS serverclasses*, utsname AS machineType
+| foreach serverclasses*
+    [eval serverclass = mvappend('&lt;&lt;FIELD&gt;&gt;', serverclass)]
+| mvexpand serverclass
+| dedup hostname serverclass
+| fields - serverclasses*
+    </query>
+    <earliest></earliest>
+    <latest></latest>
+    <sampleRatio>1</sampleRatio>
+  </search>
+  <search id="applications">
+    <query>
+      | rest splunk_server_group="dmc_group_deployment_server" /services/deployment/server/applications | fields *
+    </query>
+    <earliest></earliest>
+    <latest></latest>
+    <sampleRatio>1</sampleRatio>
+  </search>
+  <fieldset submitButton="false">
+    <input type="dropdown" token="showHidePanel">
+      <label>Choose Panel</label>
+      <choice value="panel_deploymentservers">MDS Config status</choice>
+      <choice value="panel_deploymentapps">DS Apps</choice>
+      <choice value="panel_serverclasses">DS Serverclasses</choice>
+      <choice value="panel_clients">DS Clients</choice>
+      <initialValue>MDS Config status</initialValue>
+      <change>
+        <condition value="panel_deploymentservers">
+          <set token="tok_showPanelConfigStatus">true</set>
+          <unset token="tok_showPanelApps"></unset>
+          <unset token="tok_showPanelServerclass"></unset>
+          <unset token="tok_showPanelClients"></unset>
+        </condition>
+        <condition value="panel_deploymentapps">
+          <unset token="tok_showPanelConfigStatus"></unset>
+          <set token="tok_showPanelApps">true</set>
+          <unset token="tok_showPanelServerclass"></unset>
+          <unset token="tok_showPanelClients"></unset>
+        </condition>
+        <condition value="panel_serverclasses">
+          <unset token="tok_showPanelConfigStatus"></unset>
+          <unset token="tok_showPanelApps"></unset>
+          <set token="tok_showPanelServerclass">true</set>
+          <unset token="tok_showPanelClients"></unset>
+        </condition>
+        <condition value="panel_clients">
+          <unset token="tok_showPanelConfigStatus"></unset>
+          <unset token="tok_showPanelApps"></unset>
+          <unset token="tok_showPanelServerclass"></unset>
+          <set token="tok_showPanelClients">true</set>
+        </condition>
+      </change>
+    </input>
+    <input type="dropdown" token="tok_ShowPanelserverclass_serverclass" depends="$tok_showPanelServerclass$">
+      <label>Serverclass</label>
+      <search base="serverclasses">
+        <query>|fields title| dedup title</query>
+      </search>
+      <fieldForLabel>title</fieldForLabel>
+      <fieldForValue>title</fieldForValue>
+    </input>
+  </fieldset>
   <row>
-    <panel>
+    <panel depends="$tok_showPanelConfigStatus$">
+      <title>MDS Configuration Status</title>
       <table>
         <search>
-          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/configs/conf-serverclass | search title="global" | fields splunk_server title crossServerChecksum | stats count by crossServerChecksum  splunk_server | fields - count | rename splunk_server AS deployment_server | fields deployment_server crossServerChecksum | eval crossServerChecksum=if(crossServerChecksum=1, "Enabled", "Not Enabled")</query>
+          <query>| rest splunk_server_group="dmc_group_deployment_server" /servicesNS/-/-/configs/conf-serverclass | search title="global" |  dedup splunk_server consecutive=true | fields splunk_server title crossServerChecksum | stats count by crossServerChecksum  splunk_server | fields - count | rename splunk_server AS deployment_server | fields deployment_server crossServerChecksum | eval crossServerChecksum=if(crossServerChecksum=1, "Enabled", "Not Enabled")</query>
           <earliest>-24h@h</earliest>
           <latest>now</latest>
         </search>
@@ -16,10 +99,8 @@
         </format>
       </table>
     </panel>
-  </row>
-  <row>
-    <panel>
-      <title>Severclass Checksum</title>
+    <panel depends="$tok_showPanelConfigStatus$">
+      <title>TODO:Serverclass Checksum needing to deploy serverclass in both etc apps and deployment-apps</title>
       <table>
         <search>
           <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications  | search  (title="serverclass") | stats values(splunk_server) AS deployment_servers dc(checksum) AS checksum_count values(checksum) AS checksum  by title | eval status=if(checksum_count=1,"Matching", "Out of Sync!") | fields - checksum_count</query>
@@ -36,13 +117,30 @@
     </panel>
   </row>
   <row>
-    <panel>
+    <panel depends="$tok_showPanelConfigStatus$">
+      <title>Deployment Apps Last Updated by Deployment Server</title>
+      <table>
+        <search base="applications">
+          <query>| fields title splunk_server loadtime 
+| rename loadtime AS update_time
+| eval update_time=strptime(update_time,"%a %b %e %H:%M:%S %Y")
+| eval update_time=strftime(update_time,"%Y-%m-%d %T")
+| where like(update_time,"%")
+| sort - update_time title</query>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+    <panel depends="$tok_showPanelConfigStatus$">
       <title>Deployment Server Application Checksums</title>
       <table>
-        <search>
-          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications  | search NOT (title=".DS_Store" OR title=".git"  OR title="README" OR title=".gitignore" OR title="serverclass") | stats values(splunk_server) AS deployment_servers dc(checksum) AS checksum_count values(checksum) AS checksum  by title | eval status=if(checksum_count=1,"Matching", "Out of Sync!") | fields - checksum_count</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+        <search base="applications">
+          <query>| rename loadtime AS update_time
+          | eval update_time=strptime(update_time,"%a %b %e %H:%M:%S %Y")
+| eval update_time=strftime(update_time,"%Y-%m-%d %T")
+| search NOT (title=".DS_Store" OR title=".git"  OR title="README" OR title=".gitignore" OR title="serverclass") | stats values(splunk_server) AS deployment_servers dc(checksum) AS checksum_count values(checksum) AS checksum values(update_time) as update_time by title | eval status=if(checksum_count=1,"Matching", "Out of Sync!") 
+| sort - status update_time | fields - checksum_count</query>
         </search>
         <option name="count">10</option>
         <option name="drilldown">none</option>
@@ -60,31 +158,116 @@
     </panel>
   </row>
   <row>
-    <panel>
-      <title>Deployment Apps Last Updated by Deployment Server</title>
+    <panel depends="$tok_showPanelConfigStatus$">
+      <title>Deployment Client Distribution</title>
+      <chart>
+        <search base="clients">
+          <query>| eval hostname_guid=hostname."_".guid |  stats dc(hostname_guid) as deployment_clients by splunk_server | rename splunk_server AS deployment_server</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">collapsed</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.splitBy">_aggregation</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$tok_showPanelApps$">
+      <title>Deployment Apps</title>
       <table>
-        <search>
-          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/applications | search NOT (title=".*" OR title="README") | chart values(loadtime) OVER title by splunk_server</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+        <search base="clients">
+          <query>
+| fields hostname applications.*.serverclasses
+| untable hostname, applications, serverclass
+| rex field=applications "applications\.(?&lt;apps&gt;.+)\.serverclasses" 
+| stats dc(hostname) as clients by apps</query>
         </search>
         <option name="count">10</option>
-        <option name="drilldown">none</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">cell</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <set token="token_app">$click.value$</set>
+        </drilldown>
+      </table>
+    </panel>
+    <panel depends="$token_app$,$tok_showPanelApps$">
+      <title></title>
+      <table>
+        <title>Clients who have installed $token_app$</title>
+        <search base="clients">
+          <query>| fields hostname applications.$token_app$.* 
+| where like('applications.$token_app$.stateOnClient',"%")</query>
+        </search>
       </table>
     </panel>
   </row>
   <row>
-    <panel>
-      <title>Deployment Client Distribution</title>
-      <chart>
+    <panel depends="$tok_showPanelServerclass$">
+      <title>Serverclasses</title>
+      <table>
+        <title>click.value2 $tok_ShowPanelserverclass_apps$           click.value leftmost $tok_ShowPanelserverclass_serverclass$ column name$tok_column-name$</title>
         <search>
-          <query>| rest splunk_server_group="dmc_customgroup_mds" /services/deployment/server/clients | eval hostname_guid=hostname."_".guid |  stats dc(hostname_guid) as deployment_clients by splunk_server | rename splunk_server AS deployment_server</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>| rest splunk_server_group="dmc_group_deployment_server" /services/deployment/server/clients | fields hostname applications.*.serverclasses 
+| foreach applications* 
+    [mvexpand &lt;&lt;FIELD&gt;&gt;]
+| untable hostname, applications, serverclass
+| rex field=applications "applications\.(?&lt;Apps&gt;.+)\.serverclasses" 
+| stats values(Apps) as Apps dc(Apps) as "number of Apps" dc(hostname) as Clients by serverclass
+| rex field=Clients mode=sed "s/(.*)/\1 deployed/g" 
+| where serverclass!=""</query>
         </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.drilldown">none</option>
-      </chart>
+        <option name="count">10</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">cell</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <set token="tok_ShowPanelserverclass_apps">$row.Apps$</set>
+          <set token="tok_ShowPanelserverclass_serverclass">$click.value$</set>
+        </drilldown>
+      </table>
     </panel>
   </row>
-</dashboard>
+  <row>
+    <panel depends="$tok_ShowPanelserverclass_apps$,$tok_showPanelServerclass$">
+      <title></title>
+      <table>
+        <title>Details about serverclass $tok_ShowPanelserverclass_serverclass$ $tok_ShowPanelserverclass_serverclass$</title>
+        <search base="serverclasses">
+          <query>
+            |search title="$tok_ShowPanelserverclass_serverclass$"| eval loadTime=strptime(loadTime,"%s")
+| eval loadTime=strftime(loadTime,"%Y-%m-%d %T") 
+| rename whitelist.* as whitelist* | foreach whitelist* [eval whitelist=mvappend(&lt;&lt;FIELD&gt;&gt;,whitelist)] | rename blacklist.* as blacklist* | foreach blacklist* [eval blacklist=mvappend(&lt;&lt;FIELD&gt;&gt;,blacklist)] 
+| fields title eai:acl.owner eai:acl.app eai:acl.perms.read eai:acl.perms.write stateOnClient loadTime machineTypesFilter blacklist whitelist splunk_server
+| stats values(eai:acl.owner) AS eai:acl.owner values(eai:acl.app) AS eai:acl.app values(eai:acl.perms.read) AS eai:acl.perms.read values(eai:acl.perms.write) AS eai:acl.perms.write values(stateOnClient) AS stateOnClient values(loadTime) AS loadTime values(machineTypesFilter) AS machineTypesFilter values(blacklist) AS blacklist values(whitelist) AS whitelist values(splunk_server) AS splunk_server by title 
+          </query>
+        </search>
+      </table>
+    </panel>
+    <panel depends="$tok_ShowPanelserverclass_apps$,$tok_showPanelServerclass$">
+      <title></title>
+      <table>
+        <title>Clients who have installed $tok_ShowPanelserverclass_apps$  $tok_ShowPanelserverclass_serverclass$</title>
+        <search base="preprocessed_serverclasses">
+          <query>
+| search serverclass="$tok_ShowPanelserverclass_serverclass$"</query>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+</form>
